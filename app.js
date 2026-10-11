@@ -118,23 +118,22 @@ async function logout() {
 }
 
 // ============================================================================
-// 2. NAVEGACIÓN POR PESTAÑAS (CORREGIDO PARA CAMBIAR VISTAS)
+// 2. NAVEGACIÓN POR PESTAÑAS (CORREGIDO)
 // ============================================================================
-function switchTab(tabId) {
+window.switchTab = function(tabId) {
   // Ocultar todas las secciones principales
-  const sections = ['sec-registro', 'sec-censo', 'sec-informes', 'sec-estandar', 'sec-gestion'];
+  const sections = ['registro', 'censo', 'informes', 'estandar', 'gestion'];
   sections.forEach(id => {
-    const el = document.getElementById(id);
+    const el = document.getElementById(`sec-${id}`);
     if (el) el.classList.add('hidden');
   });
 
-  // Mostrar la sección seleccionada
+  // Mostrar la sección seleccionada (CON LAS COMILLAS CORRECTAS)
   const activeSection = document.getElementById(`sec-${tabId}`);
   if (activeSection) activeSection.classList.remove('hidden');
 
   // Actualizar estilos de botones de escritorio
-  const tabs = ['registro', 'censo', 'informes', 'estandar', 'gestion'];
-  tabs.forEach(id => {
+  sections.forEach(id => {
     const btn = document.getElementById(`tab-${id}`);
     if (btn) {
       if (id === tabId) {
@@ -146,7 +145,7 @@ function switchTab(tabId) {
   });
 
   // Actualizar estilos de botones móviles
-  tabs.forEach(id => {
+  sections.forEach(id => {
     const mobBtn = document.getElementById(`mob-${id}`);
     if (mobBtn) {
       if (id === tabId) {
@@ -156,7 +155,7 @@ function switchTab(tabId) {
       }
     }
   });
-}
+};
 
 // ============================================================================
 // 3. CARGA Y SINCRONIZACIÓN DE DATOS (SUPABASE + LOCALSTORAGE)
