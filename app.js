@@ -28,7 +28,7 @@ let state = {
 };
 
 // ============================================================================
-// 1. AUTENTICACIÓN Y CONTROL DE SESIÓN (CORREGIDO PARA OCULTAR LOGIN)
+// 1. AUTENTICACIÓN Y CONTROL DE SESIÓN
 // ============================================================================
 async function handleAuth(event) {
   if (event) event.preventDefault();
@@ -90,7 +90,7 @@ function updateAuthUI(isAuthenticated, userEmail = '') {
 
   if (isAuthenticated) {
     if (appContent) appContent.classList.remove('hidden');
-    if (landingLogin) landingLogin.classList.add('hidden'); // OCULTA LA PANTALLA DE LOGIN
+    if (landingLogin) landingLogin.classList.add('hidden'); // Oculta el login
     if (authState) authState.textContent = userEmail;
     if (authIndicator) authIndicator.className = 'w-2 h-2 rounded-full bg-green-500';
     if (btnAuth) {
@@ -99,7 +99,7 @@ function updateAuthUI(isAuthenticated, userEmail = '') {
     }
   } else {
     if (appContent) appContent.classList.add('hidden');
-    if (landingLogin) landingLogin.classList.remove('hidden'); // MUESTRA LA PANTALLA DE LOGIN
+    if (landingLogin) landingLogin.classList.remove('hidden'); // Muestra el login
     if (authState) authState.textContent = 'Sesión no iniciada';
     if (authIndicator) authIndicator.className = 'w-2 h-2 rounded-full bg-yellow-500';
     if (btnAuth) {
@@ -118,22 +118,21 @@ async function logout() {
 }
 
 // ============================================================================
-// 2. NAVEGACIÓN POR PESTAÑAS (CORREGIDO)
+// 2. NAVEGACIÓN POR PESTAÑAS (DINÁMICA)
 // ============================================================================
 window.switchTab = function(tabId) {
-  // Ocultar todas las secciones principales
   const sections = ['registro', 'censo', 'informes', 'estandar', 'gestion'];
+  
   sections.forEach(id => {
     const el = document.getElementById(`sec-${id}`);
-    if (el) el.classList.add('hidden');
-  });
-
-  // Mostrar la sección seleccionada (CON LAS COMILLAS CORRECTAS)
-  const activeSection = document.getElementById(`sec-${tabId}`);
-  if (activeSection) activeSection.classList.remove('hidden');
-
-  // Actualizar estilos de botones de escritorio
-  sections.forEach(id => {
+    if (el) {
+      if (id === tabId) {
+        el.classList.remove('hidden');
+      } else {
+        el.classList.add('hidden');
+      }
+    }
+    
     const btn = document.getElementById(`tab-${id}`);
     if (btn) {
       if (id === tabId) {
@@ -142,10 +141,7 @@ window.switchTab = function(tabId) {
         btn.className = "py-3 px-4 text-slate-400 border-b-2 border-transparent font-medium touch-target flex items-center gap-2";
       }
     }
-  });
 
-  // Actualizar estilos de botones móviles
-  sections.forEach(id => {
     const mobBtn = document.getElementById(`mob-${id}`);
     if (mobBtn) {
       if (id === tabId) {
@@ -259,6 +255,30 @@ function limpiarFormulario() {
   if (form) form.reset();
 }
 
+async function markLoss(ringNumber) {
+  const reason = prompt(`Indique el motivo de la baja para el ejemplar ${ringNumber}:`);
+  if (!reason) return;
+
+  const lossRecord = {
+    ring_number: ringNumber,
+    date: new Date().toISOString().split('T')[0],
+    reason: reason
+  };
+
+  if (navigator.onLine && supabaseClient) {
+    await supabaseClient.from('losses').insert([lossRecord]);
+    await supabaseClient.from('animals').update({ status: 'loss' }).eq('ring_number', ringNumber);
+  }
+
+  const animal = state.animals.find(a => a.ring_number === ringNumber);
+  if (animal) animal.status = 'loss';
+
+  state.losses.push(lossRecord);
+  localStorage.setItem('alacantin_animals', JSON.stringify(state.animals));
+  localStorage.setItem('alacantin_losses', JSON.stringify(state.losses));
+  renderAll();
+}
+
 // ============================================================================
 // 5. CÁLCULOS GENEALÓGICOS Y CONSANGUINIDAD (WRIGHT COMPLETO)
 // ============================================================================
@@ -312,13 +332,26 @@ function calculateWrightInbreeding(sireRing, damRing) {
 // ============================================================================
 function renderAll() {
   renderAnimalsTable();
+  populateDropdowns();
 }
 
 function renderAnimalsTable() {
   const tbody = document.getElementById('tabla-ejemplares');
   if (!tbody) return;
 
-  tbody.innerHTML = state.animals.map(a => `
+  const filtered = state.animals.filter(a => {
+    const matchesSearch = !state.filters.search ||
+      a.ring_number.toLowerCase().includes(state.filters.search.toLowerCase()) ||
+      (a.notes && a.notes.toLowerCase().includes(state.filters.search.toLowerCase()));
+
+    const matchesVariety = state.filters.variety === 'all' || a.variety === state.filters.variety;
+    const matchesSex = state.filters.sex === 'all' || a.sex === state.filters.sex;
+    const matchesStatus = state.filters.status === 'all' || a.status === state.filters.status;
+
+    return matchesSearch && matchesVariety && matchesSex && matchesStatus;
+  });
+
+  tbody.innerHTML = filtered.map(a => `
     <tr class="hover:bg-slate-700/50">
       <td class="p-4 font-bold text-amber-400">${a.ring_number}</td>
       <td class="p-4">${a.sex === 'M' ? '♂ Macho' : '♀ Hembra'}</td>
@@ -326,16 +359,35 @@ function renderAnimalsTable() {
       <td class="p-4">${a.birth_date || '-'}</td>
       <td class="p-4">${a.section || 'Nacimientos'}</td>
       <td class="p-4 flex gap-2">
+        ${a.status !== 'loss' ? `<button onclick="markLoss('${a.ring_number}')" class="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded text-xs">Baja</button>` : ''}
         <button onclick="generatePedigreePDF('${a.ring_number}')" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-xs">Pedigrí</button>
       </td>
     </tr>
   `).join('');
 }
 
+function populateDropdowns() {
+  const sireSelect = document.getElementById('padre');
+  const damSelect = document.getElementById('madre');
+
+  const males = state.animals.filter(a => a.sex === 'M' && a.status !== 'loss');
+  const females = state.animals.filter(a => a.sex === 'H' && a.status !== 'loss');
+
+  if (sireSelect) {
+    sireSelect.innerHTML = '<option value="">Sin Registro (Padre)</option>' +
+      males.map(m => `<option value="${m.ring_number}">${m.ring_number} (${m.variety || 'Milflores'})</option>`).join('');
+  }
+
+  if (damSelect) {
+    damSelect.innerHTML = '<option value="">Sin Registro (Madre)</option>' +
+      females.map(f => `<option value="${f.ring_number}">${f.ring_number} (${f.variety || 'Milflores'})</option>`).join('');
+  }
+}
+
 // ============================================================================
 // 7. GENERACIÓN DE CERTIFICADOS Y PDFS
 // ============================================================================
-function generatePedigreePDF(ringNumber) {
+window.generatePedigreePDF = function(ringNumber) {
   const animal = state.animals.find(a => a.ring_number === ringNumber);
   if (!animal) {
     alert('Ejemplar no encontrado.');
@@ -375,9 +427,9 @@ function generatePedigreePDF(ringNumber) {
   });
 
   doc.save(`Pedigri_ESGA025_${animal.ring_number}.pdf`);
-}
+};
 
-function filtrarInformesCNZ() {
+window.filtrarInformesCNZ = function() {
   const resultado = document.getElementById('resultado-informe');
   if (resultado) {
     resultado.innerHTML = `<div class="p-4 bg-slate-800 rounded-lg border border-slate-700 text-slate-200">
@@ -385,10 +437,9 @@ function filtrarInformesCNZ() {
       <p class="text-sm">Total de ejemplares activos en censo: <strong>${state.animals.length}</strong></p>
     </div>`;
   }
-}
+};
 
-// GPS Ubicación
-function obtenerUbicacionGPS() {
+window.obtenerUbicacionGPS = function() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(position => {
       const lat = position.coords.latitude.toFixed(6);
@@ -401,20 +452,20 @@ function obtenerUbicacionGPS() {
   } else {
     alert('La geolocalización no es compatible en este navegador.');
   }
-}
+};
 
-function actualizarPesoPorDefecto() {
+window.actualizarPesoPorDefecto = function() {
   const sexo = document.getElementById('sexo')?.value;
   const peso = document.getElementById('peso');
   if (peso) {
     peso.value = sexo === 'M' ? '3500' : '2500';
   }
-}
+};
 
 // ============================================================================
 // 8. INICIALIZACIÓN GLOBAL
 // ============================================================================
 document.addEventListener('DOMContentLoaded', () => {
-  console.log('AlacantinApp v3 - Sistema Inicializado Correctamente.');
+  console.log('AlacantinApp v3 - Sistema Inicializado Correctamente con todas las funciones.');
   checkSession();
 });
